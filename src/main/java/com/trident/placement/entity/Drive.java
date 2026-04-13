@@ -1,0 +1,79 @@
+package com.trident.placement.entity;
+
+import jakarta.persistence.*;
+import lombok.*;
+import java.math.BigDecimal;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+
+import com.trident.placement.enums.DriveStatus;
+import com.trident.placement.enums.DriveType;
+
+@Entity
+@Table(name = "DRIVES")
+@Data
+@NoArgsConstructor
+@AllArgsConstructor
+@Builder
+public class Drive {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.SEQUENCE, generator = "drive_seq")
+    @SequenceGenerator(
+            name = "drive_seq",
+            sequenceName = "SEQ_DRIVE",
+            allocationSize = 1
+    )
+    @Column(name = "ID")
+    private Long id;
+
+    @Column(name = "COMPANY_NAME", nullable = false, length = 200)
+    private String companyName;
+
+    @Column(name = "JOB_ROLE", nullable = false, length = 150)
+    private String role;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "DRIVE_TYPE", nullable = false, length = 20)
+    private DriveType driveType;
+
+    @Column(name = "LPA_PACKAGE", precision = 5, scale = 2)
+    private BigDecimal lpaPackage;
+
+    @Column(name = "MINIMUM_CGPA", nullable = false, precision = 4, scale = 2)
+    private BigDecimal minimumCgpa;
+
+    @Column(name = "LAST_DATE", nullable = false)
+    private LocalDate lastDate;
+
+    @Column(name = "DESCRIPTION", length = 2000)
+    private String description;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "STATUS", nullable = false, length = 10)
+    private DriveStatus status = DriveStatus.OPEN;
+
+    @Column(name = "CREATED_AT", nullable = false, updatable = false)
+    private LocalDateTime createdAt;
+
+    @Column(name = "UPDATED_AT", nullable = false)
+    private LocalDateTime updatedAt;
+
+    @ElementCollection(fetch = FetchType.EAGER)
+    @CollectionTable(name = "DRIVE_BRANCHES", joinColumns = @JoinColumn(name = "DRIVE_ID"))
+    @Column(name = "BRANCH_CODE")
+    private java.util.List<String> branches;
+
+    @PrePersist
+    protected void onCreate() {
+        createdAt = LocalDateTime.now();
+        updatedAt = LocalDateTime.now();
+    }
+
+    @PreUpdate
+    protected void onUpdate() {
+        updatedAt = LocalDateTime.now();
+    }
+
+    
+}

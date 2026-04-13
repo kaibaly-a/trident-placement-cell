@@ -1,0 +1,48 @@
+spring.application.name=trident-placement-cell
+
+server.port=8080
+server.address=0.0.0.0
+
+bput.result.service.url=http://localhost:8081
+
+# ── CORS ──────────────────────────────────────────────────────────────────────
+app.cors.allowed-origins=http://localhost:3000,http://localhost:8080
+
+# ── Primary Datasource (feecdemo schema) ─────────────────────────────────────
+spring.datasource.url=jdbc:oracle:thin:@//YOUR_HOST:1521/YOUR_SERVICE
+spring.datasource.username=YOUR_USERNAME
+spring.datasource.password=YOUR_PASSWORD
+spring.datasource.driver-class-name=oracle.jdbc.OracleDriver
+
+# ── Exam Datasource ───────────────────────────────────────────────────────────
+spring.examdb.datasource.jdbcUrl=jdbc:oracle:thin:@YOUR_HOST:1521/YOUR_SERVICE
+spring.examdb.datasource.username=YOUR_EXAM_USERNAME
+spring.examdb.datasource.password=YOUR_EXAM_PASSWORD
+spring.examdb.datasource.driver-class-name=oracle.jdbc.OracleDriver
+
+# ── JPA / Hibernate ───────────────────────────────────────────────────────────
+spring.jpa.database-platform=org.hibernate.dialect.OracleDialect
+spring.jpa.hibernate.ddl-auto=validate
+spring.jpa.show-sql=true
+spring.jpa.properties.hibernate.format_sql=true
+
+# ── Azure AD OAuth2 Client Provider ───────────────────────────────────────────
+spring.security.oauth2.client.provider.azure.authorization-uri=https://login.microsoftonline.com/YOUR_TENANT_ID/oauth2/v2.0/authorize
+spring.security.oauth2.client.provider.azure.token-uri=https://login.microsoftonline.com/YOUR_TENANT_ID/oauth2/v2.0/token
+spring.security.oauth2.client.provider.azure.user-info-uri=https://graph.microsoft.com/oidc/userinfo
+spring.security.oauth2.client.provider.azure.jwk-set-uri=https://login.microsoftonline.com/YOUR_TENANT_ID/discovery/v2.0/keys
+spring.security.oauth2.client.provider.azure.issuer-uri=https://login.microsoftonline.com/YOUR_TENANT_ID/v2.0
+spring.cloud.azure.active-directory.profile.tenant-id=YOUR_TENANT_ID
+
+# ── Azure AD Resource Server (used by JwtDecoderConfig @Bean) ─────────────────
+spring.security.oauth2.resourceserver.jwt.issuer-uri=https://login.microsoftonline.com/YOUR_TENANT_ID/v2.0
+spring.security.oauth2.resourceserver.jwt.jwk-set-uri=https://login.microsoftonline.com/YOUR_TENANT_ID/discovery/v2.0/keys
+spring.security.oauth2.resourceserver.jwt.audiences=YOUR_CLIENT_ID
+
+# ── Placement Portal Azure App Registration ────────────────────────────────────
+azure.ad.tenant-id=YOUR_TENANT_ID
+azure.ad.client-id=YOUR_CLIENT_ID
+azure.ad.client-secret=YOUR_CLIENT_SECRET
+
+# ── egovernance credentials (Graph / OBO token exchange) ──────────────────────
+trident.egovernance.client_id=YOUR_EGOVERNANCE_CLIENT_ID
