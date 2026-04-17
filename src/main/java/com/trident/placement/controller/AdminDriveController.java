@@ -42,6 +42,7 @@ public class AdminDriveController {
     private final CgpaEligibilityService  cgpaEligibilityService;
     private final EligibleDriveRepository eligibleDriveRepository;
     private final AdminDriveRepository    adminDriveRepository;
+    private final com.trident.placement.service.AdminApplicationService adminApplicationService;
 
     @GetMapping
     public ResponseEntity<ApiResponse<List<AdminDriveResponse>>> getAllDrives() {
@@ -54,6 +55,22 @@ public class AdminDriveController {
             @PathVariable Long id) {
         AdminDriveResponse drive = adminDriveService.getDriveById(id);
         return ResponseEntity.ok(ApiResponse.ok(drive));
+    }
+
+    /**
+     * Frontend fallback endpoint for applications by drive
+     * GET /api/admin/drives/{id}/applications
+     */
+    @GetMapping("/{id}/applications")
+    public ResponseEntity<ApiResponse<List<com.trident.placement.dto.admin.AdminApplicationResponse>>> getApplicationsForDrive(
+            @PathVariable Long id,
+            @RequestParam(required = false) String status) {
+        
+        List<com.trident.placement.dto.admin.AdminApplicationResponse> apps = (status != null && !status.isBlank())
+                ? adminApplicationService.getApplicationsByDriveAndStatus(id, status)
+                : adminApplicationService.getApplicationsByDrive(id);
+        
+        return ResponseEntity.ok(ApiResponse.ok(apps));
     }
 
     @PostMapping

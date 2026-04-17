@@ -6,6 +6,7 @@ import com.trident.placement.entity.Student;
 import com.trident.placement.entity.StudentCgpa;
 import com.trident.placement.repository.EligibleDriveRepository;
 import com.trident.placement.repository.AdminDriveRepository;
+import com.trident.placement.repository.DriveJDRepository;
 import com.trident.placement.repository.StudentCgpaRepository;
 import com.trident.placement.repository.StudentRepository;
 import com.trident.placement.util.BranchCodeUtils;
@@ -23,9 +24,11 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
 import java.math.BigDecimal;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 /**
  * Core service for CGPA-based drive eligibility.
@@ -50,6 +53,7 @@ public class CgpaEligibilityService {
     private final StudentCgpaRepository studentCgpaRepository;
     private final EligibleDriveRepository eligibleDriveRepository;
     private final AdminDriveRepository adminDriveRepository;
+    private final DriveJDRepository driveJDRepository;
     private final BputResultService bputResultService;
     private final SessionCalculator sessionCalculator;
 
@@ -134,19 +138,25 @@ public class CgpaEligibilityService {
     // ── 2. ELIGIBILITY ASSIGNMENT (called when drive is posted) ──────────────
 
     /**
-     * Schedules {@link #assignEligibleStudents(Long)} after the current transaction commits
+     * Schedules {@link #assignEligibleStudents(Drive)} after the current transaction commits
      * so {@code DRIVES} / {@code DRIVE_BRANCHES} rows are visible to the async worker.
      */
     public void scheduleAssignEligibleStudentsAfterCommit(Long driveId) {
         if (!TransactionSynchronizationManager.isSynchronizationActive()) {
             log.warn("No active transaction — scheduling eligibility immediately for drive {}", driveId);
-            assignEligibleStudents(driveId);
+            Drive drive = adminDriveRepository.findById(driveId).orElse(null);
+            if (drive != null) {
+                assignEligibleStudents(drive);
+            }
             return;
         }
         TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
             @Override
             public void afterCommit() {
-                assignEligibleStudents(driveId);
+                Drive drive = adminDriveRepository.findById(driveId).orElse(null);
+                if (drive != null) {
+                    assignEligibleStudents(drive);
+                }
             }
         });
     }
@@ -156,17 +166,16 @@ public class CgpaEligibilityService {
      * Loads the drive fresh so {@code DRIVE_BRANCHES} is visible — avoids async races.
      */
     @Async("cgpaTaskExecutor")
-    public void assignEligibleStudents(Long driveId) {
-        Drive drive = adminDriveRepository.findById(driveId).orElse(null);
+    public void assignEligibleStudents(Drive drive) {
         if (drive == null) {
-            log.warn("assignEligibleStudents: drive id={} not found — skipping", driveId);
+            log.warn("assignEligibleStudents: drive is null — skipping");
             return;
         }
         assignEligibleStudentsInternal(drive);
     }
 
     /**
-     * Called by AdminDriveServiceImpl AFTER a drive is saved (via {@link #assignEligibleStudents(Long)}).
+     * Called by AdminDriveServiceImpl AFTER a drive is saved (via {@link #assignEligibleStudents(Drive)}).
      *
      * Uses STORED CGPA from student_cgpa table — NO BPUT call here.
      * If a student has no stored CGPA, they are skipped.
@@ -181,7 +190,7 @@ public class CgpaEligibilityService {
         log.info("Assigning eligibility for drive: {} (id={}, minCgpa={}) — 4th-year students (2021+ batch) only",
                 drive.getCompanyName(), drive.getId(), drive.getMinimumCgpa());
 
-        Set<String> allowedBranches = BranchCodeUtils.toSet(drive.getBranches());
+        List<String> allowedBranches = getAllowedBranches(drive.getId());
         if (allowedBranches.isEmpty()) {
             log.warn("Drive id={} has no branch codes in DRIVE_BRANCHES — no students will be marked eligible. " +
                     "Admin must select at least one branch when creating/updating the drive.",
@@ -190,9 +199,12 @@ public class CgpaEligibilityService {
         }
         log.info("Drive id={} restricted to branches: {}", drive.getId(), allowedBranches);
 
+        // Convert to Set for compatibility with existing query
+        Set<String> branchSet = new java.util.HashSet<>(allowedBranches);
+
         // Fetch completely filtered list from DB: 4th-year, 2021+, meets minCgpa, and matches allowed branches
         List<Student> eligibleStudents = studentRepository.findEligibleStudentsForDriveWithBranches(
-                drive.getMinimumCgpa(), allowedBranches);
+                drive.getMinimumCgpa(), branchSet);
 
         int eligible = 0;
         List<EligibleDrive> toInsert = new ArrayList<>();
@@ -217,6 +229,24 @@ public class CgpaEligibilityService {
 
         log.info("Drive {} eligibility done — eligible 4th-year students inserted: {}",
                 drive.getId(), eligible);
+    }
+
+    /**
+     * Reads allowed branches from drive_jd.allowed_branches (pipe-separated).
+     * Returns empty list if no JD or no branches set → means ALL branches allowed.
+     */
+    private List<String> getAllowedBranches(Long driveId) {
+        return driveJDRepository.findByDriveIdWithSteps(driveId)
+                .map(jd -> {
+                    String branches = jd.getAllowedBranches();
+                    if (branches == null || branches.isBlank()) return List.<String>of();
+                    return Arrays.stream(branches.split("\\|"))
+                            .map(String::trim)
+                            .map(String::toUpperCase)
+                            .filter(s -> !s.isBlank())
+                            .collect(Collectors.toList());
+                })
+                .orElse(List.of());
     }
 
     // ── Student dashboard ─────────────────────────────────────────────────────

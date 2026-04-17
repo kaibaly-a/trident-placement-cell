@@ -17,11 +17,12 @@ import java.util.List;
  * Unified request body for POST /api/admin/drives
  *
  * Accepts the full payload from the frontend in one shot:
- * — Core drive fields  (company, role, lpa, cgpa, branches …)
+ * — Core drive fields (company, role, lpa, cgpa, branches …)
  * — Job Description fields (jobLocation, selectionProcess, skills …)
  *
  * JSON aliases are used so the frontend doesn't have to rename any key
- * (e.g.  "lpa" or "lpaPackage" both work; "allowedBranches" or "branches" both work).
+ * (e.g. "lpa" or "lpaPackage" both work; "allowedBranches" or "branches" both
+ * work).
  */
 @Data
 @Builder
@@ -44,31 +45,24 @@ public class DriveCreateRequest {
 
     /**
      * Frontend sends "lpa" — backend field is lpaPackage.
+     * 
      * @JsonProperty / @JsonAlias covers both cases.
      */
     @NotNull(message = "LPA package is required")
     @DecimalMin(value = "0.0", inclusive = false, message = "LPA package must be greater than 0")
     @Digits(integer = 3, fraction = 2, message = "LPA format: up to 3 digits and 2 decimal places")
-    @JsonAlias({"lpaPackage", "lpa"})
+    @JsonAlias({ "lpaPackage", "lpa" })
     private BigDecimal lpaPackage;
 
-    /**
-     * Numeric CGPA cutoff used for eligibility computation.
-     * Frontend may send either "minimumCgpa" or "cgpaCutoff" as a number.
-     * If they send "cgpaCutoff" as a display string (e.g. "6.5"), we parse it in the service.
-     */
     @NotNull(message = "Minimum CGPA is required")
     @DecimalMin(value = "0.0", inclusive = false, message = "Minimum CGPA must be greater than 0")
     @DecimalMax(value = "10.0", message = "Minimum CGPA cannot exceed 10.0")
-    @JsonAlias({"minimumCgpa", "cgpaCutoff"})
+    @JsonAlias({ "minimumCgpa", "cgpaCutoff" })
     private BigDecimal minimumCgpa;
 
-    /**
-     * Application last date.  Frontend sends "lastDateApplication" or "lastDate".
-     */
     @NotNull(message = "Last date is required")
     @Future(message = "Last date must be a future date")
-    @JsonAlias({"lastDate", "lastDateApplication"})
+    @JsonAlias({ "lastDate", "lastDateApplication" })
     private LocalDate lastDate;
 
     @Size(max = 2000, message = "Description must not exceed 2000 characters")
@@ -76,14 +70,17 @@ public class DriveCreateRequest {
 
     /**
      * Branch codes controlling which students are eligible.
-     * Frontend sends "allowedBranches" — accepted as "branches" too.
-     *
-     * Must contain at least one entry so that eligibility assignment works.
+     * Accepted keys: "branches", "allowedBranches", "eligibleBranches"
      */
     @NotNull(message = "Branches are required")
     @NotEmpty(message = "Select at least one branch for this drive")
-    @JsonAlias({"branches", "allowedBranches"})
-    private List<String> allowedBranches;
+    @JsonAlias({ "branches", "allowedBranches", "eligibleBranches" })
+    private List<String> eligibleBranches;
+
+    @Size(max = 50)
+    private String eligibleCourse; // "B.TECH"
+
+    private Long passoutYear; // 2026
 
     // ── Job Description fields ────────────────────────────────────────────────
     // All optional — a shell JD is created even if these are absent.
@@ -92,10 +89,10 @@ public class DriveCreateRequest {
     private String jobLocation;
 
     @Size(max = 50)
-    private String employmentType;      // Full Time | Internship | Part Time | Contract
+    private String employmentType; // Full Time | Internship | Part Time | Contract
 
     @Size(max = 50)
-    private String workMode;            // On-Site | Remote | Hybrid
+    private String workMode; // On-Site | Remote | Hybrid
 
     @Size(max = 100)
     private String vacancies;
@@ -105,12 +102,15 @@ public class DriveCreateRequest {
 
     /** "joining" or "joiningInfo" — both are mapped. */
     @Size(max = 255)
-    @JsonAlias({"joining", "joiningInfo"})
+    @JsonAlias({ "joining", "joiningInfo" })
     private String joining;
 
-    /** Human-readable cutoff string, e.g. "6.5" or "No Cutoff" (stored in JD for display). */
+    /**
+     * Human-readable cutoff string, e.g. "6.5" or "No Cutoff" (stored in JD for
+     * display).
+     */
     @Size(max = 20)
-    @JsonAlias({"cgpaCutoffDisplay"})
+    @JsonAlias({ "cgpaCutoffDisplay" })
     private String cgpaCutoffDisplay;
 
     private Boolean backlogsAllowed;

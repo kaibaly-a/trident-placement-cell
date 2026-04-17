@@ -19,11 +19,7 @@ public class Drive {
 
     @Id
     @GeneratedValue(strategy = GenerationType.SEQUENCE, generator = "drive_seq")
-    @SequenceGenerator(
-            name = "drive_seq",
-            sequenceName = "SEQ_DRIVE",
-            allocationSize = 1
-    )
+    @SequenceGenerator(name = "drive_seq", sequenceName = "SEQ_DRIVE", allocationSize = 1)
     @Column(name = "ID")
     private Long id;
 
@@ -59,10 +55,20 @@ public class Drive {
     @Column(name = "UPDATED_AT", nullable = false)
     private LocalDateTime updatedAt;
 
-    @ElementCollection(fetch = FetchType.EAGER)
-    @CollectionTable(name = "DRIVE_BRANCHES", joinColumns = @JoinColumn(name = "DRIVE_ID"))
-    @Column(name = "BRANCH_CODE")
-    private java.util.List<String> branches;
+    /**
+     * One row per eligible branch for this drive.
+     * Populated at drive creation; read by CgpaEligibilityService.
+     */
+    @OneToMany(mappedBy = "drive", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
+    private java.util.List<DriveEligibility> eligibilityRows = new java.util.ArrayList<>();
+
+    /** Drive-level default course (e.g. "B.TECH"). Each eligibility row may override. */
+    @Column(name = "ELIGIBLE_COURSE", length = 50)
+    private String eligibleCourse;
+
+    /** Drive-level default passout year (e.g. 2026). Each eligibility row may override. */
+    @Column(name = "PASSOUT_YEAR")
+    private Long passoutYear;
 
     @PrePersist
     protected void onCreate() {
@@ -75,5 +81,4 @@ public class Drive {
         updatedAt = LocalDateTime.now();
     }
 
-    
 }

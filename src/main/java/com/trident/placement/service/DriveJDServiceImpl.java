@@ -297,27 +297,16 @@ public class DriveJDServiceImpl implements DriveJDService {
                 .build();
     }
 
+    /**
+     * Branch management is now handled via DRIVE_ELIGIBILITY rows at drive creation.
+     * This method is kept as a no-op stub to avoid breaking JD create/update calls.
+     * To change branches for an existing drive, use the admin drive update API.
+     */
     private void syncDriveBranches(Drive drive, List<String> newBranches) {
-        List<String> normalized = BranchCodeUtils.normalizeList(newBranches);
-        if (normalized == null) {
-            normalized = List.of();
-        }
-
-        boolean branchesChanged = !BranchCodeUtils.sameBranchSet(drive.getBranches(), normalized);
-
-        if (branchesChanged) {
-            if (normalized.isEmpty()) {
-                if (drive.getBranches() != null) {
-                    drive.getBranches().clear();
-                }
-            } else {
-                drive.setBranches(new java.util.ArrayList<>(normalized));
-            }
-            adminDriveRepository.save(drive);
-            log.info("Syncing branches from JD → {}. Retriggering eligibility for drive {}",
-                    normalized, drive.getId());
-            eligibleDriveRepository.deleteByDriveId(drive.getId());
-            cgpaEligibilityService.scheduleAssignEligibleStudentsAfterCommit(drive.getId());
+        // Branches are now stored in DRIVE_ELIGIBILITY, not synced from JD.
+        if (newBranches != null && !newBranches.isEmpty()) {
+            log.info("Note: allowedBranches in JD request (drive id={}) is stored in JD for display only. " +
+                    "Eligibility filtering uses DRIVE_ELIGIBILITY table.", drive.getId());
         }
     }
 }

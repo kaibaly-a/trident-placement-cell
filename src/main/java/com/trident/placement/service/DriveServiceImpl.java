@@ -220,7 +220,10 @@ public class DriveServiceImpl implements DriveService {
                 .lastDate(drive.getLastDate().format(DATE_FMT))
                 .description(drive.getDescription())
                 .status(drive.getStatus().name())
-                .eligibleBranches(drive.getBranches())
+                .eligibleBranches(drive.getEligibilityRows() == null ? List.of()
+                        : drive.getEligibilityRows().stream()
+                                .map(com.trident.placement.entity.DriveEligibility::getBranchCode)
+                                .distinct().collect(Collectors.toList()))
                 .build();
     }
 

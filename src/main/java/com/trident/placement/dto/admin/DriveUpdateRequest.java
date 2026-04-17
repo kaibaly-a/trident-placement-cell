@@ -42,5 +42,10 @@ public class DriveUpdateRequest {
     @Size(max = 2000, message = "Description must not exceed 2000 characters")
     private String description;
 
+    @Size(max = 50)
+    private String eligibleCourse;
+
+    private Long passoutYear;
+
     private java.util.List<String> branches;
 }

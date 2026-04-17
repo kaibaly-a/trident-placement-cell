@@ -24,13 +24,16 @@ public class AdminDriveResponse {
     private String driveType;
     private BigDecimal lpaPackage;
     private BigDecimal minimumCgpa;
-    private String lastDate;            // formatted dd-MM-yyyy
+    private String lastDate; // formatted dd-MM-yyyy
     private String description;
-    private String status;              // OPEN / CLOSED
-    private long totalApplicants;       // total applications for this drive
-    private long shortlistedCount;      // applications with SHORTLISTED status
-    private long selectedCount;         // applications with APPROVED status
+    private String status; // OPEN / CLOSED
+    private long totalApplicants; // total applications for this drive
+    private long shortlistedCount; // applications with SHORTLISTED status
+    private long selectedCount; // applications with APPROVED status
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
     private java.util.List<String> branches;
+
+    private String eligibleCourse;
+    private Long passoutYear;
 }

@@ -16,15 +16,9 @@ import java.time.LocalDateTime;
  * by regdno — instant response, no BPUT call needed.
  */
 @Entity
-@Table(
-    name = "eligible_drives",
-    uniqueConstraints = {
-        @UniqueConstraint(
-            name = "uq_eligible_drives_regdno_drive",
-            columnNames = {"regdno", "drive_id"}
-        )
-    }
-)
+@Table(name = "eligible_drives", uniqueConstraints = {
+        @UniqueConstraint(name = "uq_eligible_drives_regdno_drive", columnNames = { "regdno", "drive_id" })
+})
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
@@ -33,11 +27,7 @@ public class EligibleDrive {
 
     @Id
     @GeneratedValue(strategy = GenerationType.SEQUENCE, generator = "eligible_drives_seq")
-    @SequenceGenerator(
-            name = "eligible_drives_seq",
-            sequenceName = "SEQ_ELIGIBLE_DRIVES",
-            allocationSize = 1
-    )
+    @SequenceGenerator(name = "eligible_drives_seq", sequenceName = "SEQ_ELIGIBLE_DRIVES", allocationSize = 1)
     private Long id;
 
     /**
@@ -52,6 +42,12 @@ public class EligibleDrive {
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "drive_id", nullable = false)
     private Drive drive;
+
+    @Column(name = "DRIVE_ID", nullable = false, insertable = false, updatable = false)
+    private Long driveId;
+
+    @Column(name = "BRANCH_CODE", length = 20)
+    private String branchCode;
 
     /**
      * When this eligibility record was created.

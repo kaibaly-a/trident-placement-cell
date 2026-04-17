@@ -11,6 +11,10 @@ import com.trident.placement.repository.DriveRepository;
 import com.trident.placement.repository.EligibleDriveRepository;
 import com.trident.placement.repository.StudentCgpaRepository;
 import com.trident.placement.repository.StudentRepository;
+import com.trident.placement.repository.RoundShortlistRepository;
+import com.trident.placement.service.ShortlistService;
+import com.trident.placement.entity.RoundShortlist;
+import com.trident.placement.enums.ShortlistStatus;
 import com.trident.placement.util.BranchCodeUtils;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -34,6 +38,8 @@ public class ApplicationServiceImpl implements ApplicationService {
     private final DriveRepository        driveRepository;
     private final EligibleDriveRepository eligibleDriveRepository;
     private final StudentCgpaRepository  studentCgpaRepository;
+    private final RoundShortlistRepository roundShortlistRepository;
+    private final ShortlistService shortlistService;
 
     private static final DateTimeFormatter DATE_FMT =
             DateTimeFormatter.ofPattern("dd-MM-yy");
@@ -114,9 +120,28 @@ public class ApplicationServiceImpl implements ApplicationService {
                 .status(ApplicationStatus.APPLIED)
                 .build();
 
+        Application savedApplication = applicationRepository.save(application);
+
+        // ── 7. Initialize Shortlist Rounds ────────────────────────────────────
+        List<String> eliminationRounds = shortlistService.getAvailableRounds(driveId);
+        if (!eliminationRounds.isEmpty()) {
+            List<RoundShortlist> roundRecords = new java.util.ArrayList<>();
+            for (String round : eliminationRounds) {
+                RoundShortlist record = RoundShortlist.builder()
+                        .drive(drive)
+                        .application(savedApplication)
+                        .round(round)
+                        .status(ShortlistStatus.PENDING)
+                        .build();
+                roundRecords.add(record);
+            }
+            roundShortlistRepository.saveAll(roundRecords);
+            log.info("Initialized {} empty shortlist rounds for application {}", eliminationRounds.size(), savedApplication.getId());
+        }
+
         log.info("Application submitted: student={} drive={} ({})",
                 actualRegdno, driveId, drive.getCompanyName());
-        return toDTO(applicationRepository.save(application));
+        return toDTO(savedApplication);
     }
 
     // ── Private helpers ───────────────────────────────────────────────────────
@@ -146,15 +171,19 @@ public class ApplicationServiceImpl implements ApplicationService {
             return false;
         }
 
-        // 2. Branch check
-        if (drive.getBranches() != null && !drive.getBranches().isEmpty()) {
+        // 2. Branch check (reads from DRIVE_ELIGIBILITY rows)
+        List<String> driveBranches = drive.getEligibilityRows() == null ? List.of()
+                : drive.getEligibilityRows().stream()
+                        .map(er -> er.getBranchCode())
+                        .collect(java.util.stream.Collectors.toList());
+        if (!driveBranches.isEmpty()) {
             String studentBranch = student.getBranchCode() != null
                     ? student.getBranchCode().trim().toUpperCase() : "";
-            boolean branchOk = BranchCodeUtils.normalizeList(drive.getBranches())
+            boolean branchOk = BranchCodeUtils.normalizeList(driveBranches)
                     .contains(studentBranch);
             if (!branchOk) {
                 log.debug("Student {} branch '{}' not in drive {} allowed branches {}",
-                        student.getRegdno(), studentBranch, drive.getId(), drive.getBranches());
+                        student.getRegdno(), studentBranch, drive.getId(), driveBranches);
                 return false;
             }
         }
@@ -187,13 +216,18 @@ public class ApplicationServiceImpl implements ApplicationService {
             }
         } catch (NumberFormatException ignored) {}
 
-        if (drive.getBranches() != null && !drive.getBranches().isEmpty()) {
+        // Branch check (reads from DRIVE_ELIGIBILITY rows)
+        List<String> driveBranches = drive.getEligibilityRows() == null ? List.of()
+                : drive.getEligibilityRows().stream()
+                        .map(er -> er.getBranchCode())
+                        .collect(java.util.stream.Collectors.toList());
+        if (!driveBranches.isEmpty()) {
             String studentBranch = student.getBranchCode() != null
                     ? student.getBranchCode().trim().toUpperCase() : "UNKNOWN";
-            if (!BranchCodeUtils.normalizeList(drive.getBranches()).contains(studentBranch)) {
+            if (!BranchCodeUtils.normalizeList(driveBranches).contains(studentBranch)) {
                 return "You are not eligible: your branch (" + studentBranch +
                        ") is not in the list of eligible branches for this drive (" +
-                       drive.getBranches() + ").";
+                       driveBranches + ").";
             }
         }
 

@@ -39,11 +39,19 @@ public class AdminApplicationController {
 
     @GetMapping
     public ResponseEntity<ApiResponse<List<AdminApplicationResponse>>> getAllApplications(
+            @RequestParam(required = false) Long driveId,
             @RequestParam(required = false) String status) {
 
-        List<AdminApplicationResponse> apps = (status != null && !status.isBlank())
-                ? adminApplicationService.getApplicationsByStatus(status)
-                : adminApplicationService.getAllApplications();
+        List<AdminApplicationResponse> apps;
+        if (driveId != null) {
+            apps = (status != null && !status.isBlank())
+                    ? adminApplicationService.getApplicationsByDriveAndStatus(driveId, status)
+                    : adminApplicationService.getApplicationsByDrive(driveId);
+        } else {
+            apps = (status != null && !status.isBlank())
+                    ? adminApplicationService.getApplicationsByStatus(status)
+                    : adminApplicationService.getAllApplications();
+        }
 
         return ResponseEntity.ok(ApiResponse.ok(apps));
     }

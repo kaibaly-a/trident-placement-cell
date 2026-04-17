@@ -5,12 +5,14 @@ import com.trident.placement.dto.admin.AdminDriveResponse;
 import com.trident.placement.dto.admin.DriveCreateRequest;
 import com.trident.placement.dto.admin.DriveUpdateRequest;
 import com.trident.placement.entity.Drive;
+import com.trident.placement.entity.DriveEligibility;
 import com.trident.placement.entity.DriveJD;
 import com.trident.placement.entity.DriveJDSelectionStep;
 import com.trident.placement.enums.DriveStatus;
 import com.trident.placement.enums.DriveType;
 import com.trident.placement.repository.AdminApplicationRepository;
 import com.trident.placement.repository.AdminDriveRepository;
+import com.trident.placement.repository.DriveEligibilityRepository;
 import com.trident.placement.repository.DriveJDRepository;
 import com.trident.placement.repository.EligibleDriveRepository;
 import com.trident.placement.util.BranchCodeUtils;
@@ -33,16 +35,16 @@ import java.util.stream.Collectors;
 @Slf4j
 public class AdminDriveServiceImpl implements AdminDriveService {
 
-    private final AdminDriveRepository       adminDriveRepository;
+    private final AdminDriveRepository adminDriveRepository;
     private final AdminApplicationRepository adminApplicationRepository;
-    private final EligibleDriveRepository    eligibleDriveRepository;
-    private final DriveJDRepository          driveJDRepository;
+    private final EligibleDriveRepository eligibleDriveRepository;
+    private final DriveJDRepository driveJDRepository;
+    private final DriveEligibilityRepository driveEligibilityRepository;
 
     // Injected to trigger eligibility AFTER drive creation
-    private final CgpaEligibilityService     cgpaEligibilityService;
+    private final CgpaEligibilityService cgpaEligibilityService;
 
-    private static final DateTimeFormatter DATE_FMT =
-            DateTimeFormatter.ofPattern("dd-MM-yyyy");
+    private static final DateTimeFormatter DATE_FMT = DateTimeFormatter.ofPattern("dd-MM-yyyy");
 
     // ── Read ──────────────────────────────────────────────────────────────────
 
@@ -54,17 +56,17 @@ public class AdminDriveServiceImpl implements AdminDriveService {
 
         Map<Long, long[]> countsMap = new HashMap<>();
         for (Object[] row : countRows) {
-            Long driveId     = ((Number) row[0]).longValue();
-            long total       = row[1] != null ? ((Number) row[1]).longValue() : 0L;
+            Long driveId = ((Number) row[0]).longValue();
+            long total = row[1] != null ? ((Number) row[1]).longValue() : 0L;
             long shortlisted = row[2] != null ? ((Number) row[2]).longValue() : 0L;
-            long approved    = row[3] != null ? ((Number) row[3]).longValue() : 0L;
-            countsMap.put(driveId, new long[]{total, shortlisted, approved});
+            long approved = row[3] != null ? ((Number) row[3]).longValue() : 0L;
+            countsMap.put(driveId, new long[] { total, shortlisted, approved });
         }
 
         return drives.stream()
                 .map(drive -> {
                     long[] counts = countsMap.getOrDefault(
-                            drive.getId(), new long[]{0, 0, 0});
+                            drive.getId(), new long[] { 0, 0, 0 });
                     return toDTO(drive, counts[0], counts[1], counts[2]);
                 })
                 .collect(Collectors.toList());
@@ -87,13 +89,13 @@ public class AdminDriveServiceImpl implements AdminDriveService {
 
         // Normalize and validate branch list
         List<String> branchList = Objects.requireNonNullElse(
-                BranchCodeUtils.normalizeList(request.getAllowedBranches()), List.of());
+                BranchCodeUtils.normalizeList(request.getEligibleBranches()), List.of());
         if (branchList.isEmpty()) {
             throw new IllegalArgumentException(
                     "At least one valid branch code is required (e.g. CSE, ETC).");
         }
 
-        // ── 1. Save the core Drive ────────────────────────────────────────────
+        // ── 1. Save the core Drive (without branches — stored in DRIVE_ELIGIBILITY) ──
         Drive drive = Drive.builder()
                 .companyName(request.getCompanyName().trim())
                 .role(request.getRole().trim())
@@ -102,18 +104,34 @@ public class AdminDriveServiceImpl implements AdminDriveService {
                 .minimumCgpa(request.getMinimumCgpa())
                 .lastDate(request.getLastDate())
                 .description(request.getDescription() != null
-                        ? request.getDescription().trim() : null)
-                .branches(branchList)
+                        ? request.getDescription().trim()
+                        : null)
                 .status(DriveStatus.OPEN)
+                .eligibleCourse(request.getEligibleCourse())
+                .passoutYear(request.getPassoutYear())
                 .build();
 
         Drive saved = adminDriveRepository.save(drive);
         log.info("Admin created drive: {} (id={}) branches={}", saved.getCompanyName(), saved.getId(), branchList);
 
-        // ── 2. Save the Job Description (if any JD fields are present) ────────
+        // ── 2. Save one DRIVE_ELIGIBILITY row per branch ──────────────────────
+        String course = request.getEligibleCourse();
+        Long passoutYear = request.getPassoutYear();
+        List<DriveEligibility> eligRows = branchList.stream()
+                .map(branch -> DriveEligibility.builder()
+                        .drive(saved)
+                        .branchCode(branch)
+                        .course(course)
+                        .passoutYear(passoutYear)
+                        .build())
+                .collect(Collectors.toList());
+        driveEligibilityRepository.saveAll(eligRows);
+        log.info("Saved {} DRIVE_ELIGIBILITY rows for drive id={}", eligRows.size(), saved.getId());
+
+        // ── 3. Save the Job Description (if any JD fields are present) ────────
         buildAndSaveJd(saved, request);
 
-        // ── 3. Async eligibility assignment (branch + CGPA filtered) ─────────
+        // ── 4. Async eligibility assignment (branch + CGPA filtered) ─────────
         cgpaEligibilityService.scheduleAssignEligibleStudentsAfterCommit(saved.getId());
 
         return toDTO(saved, 0L, 0L, 0L);
@@ -129,23 +147,66 @@ public class AdminDriveServiceImpl implements AdminDriveService {
         boolean cgpaChanged = request.getMinimumCgpa() != null
                 && !request.getMinimumCgpa().equals(drive.getMinimumCgpa());
 
+        // ── Update drive fields FIRST ──────────────────────────────────────
+        if (request.getCompanyName() != null)
+            drive.setCompanyName(request.getCompanyName().trim());
+        if (request.getRole() != null)
+            drive.setRole(request.getRole().trim());
+        if (request.getDriveType() != null)
+            drive.setDriveType(parseDriveType(request.getDriveType()));
+        if (request.getLpaPackage() != null)
+            drive.setLpaPackage(request.getLpaPackage());
+        if (request.getMinimumCgpa() != null)
+            drive.setMinimumCgpa(request.getMinimumCgpa());
+        if (request.getLastDate() != null)
+            drive.setLastDate(request.getLastDate());
+        if (request.getDescription() != null)
+            drive.setDescription(request.getDescription().trim());
+        if (request.getEligibleCourse() != null)
+            drive.setEligibleCourse(request.getEligibleCourse());
+        if (request.getPassoutYear() != null)
+            drive.setPassoutYear(request.getPassoutYear());
+
+        // ── Then handle branches (which uses the updated course/passoutYear) ──
         boolean branchesChanged = false;
         if (request.getBranches() != null) {
             List<String> normalized = BranchCodeUtils.normalizeList(request.getBranches());
-            branchesChanged = !BranchCodeUtils.sameBranchSet(drive.getBranches(), normalized);
-            drive.setBranches(normalized);
-        }
+            // Compare existing branch codes with requested ones
+            List<String> existingBranches = driveEligibilityRepository.findByDriveId(id)
+                    .stream().map(DriveEligibility::getBranchCode).collect(Collectors.toList());
+            branchesChanged = !BranchCodeUtils.sameBranchSet(existingBranches, normalized);
 
-        if (request.getCompanyName() != null) drive.setCompanyName(request.getCompanyName().trim());
-        if (request.getRole() != null)        drive.setRole(request.getRole().trim());
-        if (request.getDriveType() != null)   drive.setDriveType(parseDriveType(request.getDriveType()));
-        if (request.getLpaPackage() != null)  drive.setLpaPackage(request.getLpaPackage());
-        if (request.getMinimumCgpa() != null) drive.setMinimumCgpa(request.getMinimumCgpa());
-        if (request.getLastDate() != null)    drive.setLastDate(request.getLastDate());
-        if (request.getDescription() != null) drive.setDescription(request.getDescription().trim());
+            if (branchesChanged && !normalized.isEmpty()) {
+                // Replace all DRIVE_ELIGIBILITY rows for this drive
+                driveEligibilityRepository.deleteByDriveId(id);
+                List<DriveEligibility> newRows = normalized.stream()
+                        .map(branch -> DriveEligibility.builder()
+                                .drive(drive)
+                                .branchCode(branch)
+                                .course(drive.getEligibleCourse())
+                                .passoutYear(drive.getPassoutYear())
+                                .build())
+                        .collect(Collectors.toList());
+                driveEligibilityRepository.saveAll(newRows);
+                log.info("Updated DRIVE_ELIGIBILITY rows for drive id={}: {}", id, normalized);
+            }
+        }
 
         Drive updated = adminDriveRepository.save(drive);
         log.info("Admin updated drive: {} (id={})", updated.getCompanyName(), updated.getId());
+
+        // If eligible course or passout year changed, update all DRIVE_ELIGIBILITY rows
+        if ((request.getEligibleCourse() != null || request.getPassoutYear() != null) && !branchesChanged) {
+            List<DriveEligibility> existingRows = driveEligibilityRepository.findByDriveId(id);
+            existingRows.forEach(row -> {
+                if (request.getEligibleCourse() != null)
+                    row.setCourse(request.getEligibleCourse());
+                if (request.getPassoutYear() != null)
+                    row.setPassoutYear(request.getPassoutYear());
+            });
+            driveEligibilityRepository.saveAll(existingRows);
+            log.info("Updated DRIVE_ELIGIBILITY course/passoutYear for drive id={}", id);
+        }
 
         // If minimumCgpa or branches changed → re-run eligibility for this drive
         if (cgpaChanged || branchesChanged) {
@@ -170,8 +231,8 @@ public class AdminDriveServiceImpl implements AdminDriveService {
         if (totalApplicants > 0) {
             throw new IllegalStateException(
                     "Cannot delete drive '" + drive.getCompanyName() +
-                    "' — it has " + totalApplicants + " application(s). " +
-                    "Close the drive instead.");
+                            "' — it has " + totalApplicants + " application(s). " +
+                            "Close the drive instead.");
         }
 
         // Clean up eligibility records first
@@ -188,7 +249,8 @@ public class AdminDriveServiceImpl implements AdminDriveService {
         Drive drive = findDriveOrThrow(id);
 
         DriveStatus newStatus = drive.getStatus() == DriveStatus.OPEN
-                ? DriveStatus.CLOSED : DriveStatus.OPEN;
+                ? DriveStatus.CLOSED
+                : DriveStatus.OPEN;
 
         drive.setStatus(newStatus);
         Drive updated = adminDriveRepository.save(drive);
@@ -225,12 +287,13 @@ public class AdminDriveServiceImpl implements AdminDriveService {
                 .vacancies(req.getVacancies())
                 .serviceAgreement(req.getServiceAgreement())
                 .joining(req.getJoining())
-                // cgpaCutoffDisplay: prefer explicit display string, fall back to minimumCgpa.toString()
+                // cgpaCutoffDisplay: prefer explicit display string, fall back to
+                // minimumCgpa.toString()
                 .cgpaCutoff(req.getCgpaCutoffDisplay() != null
                         ? req.getCgpaCutoffDisplay()
                         : req.getMinimumCgpa().toPlainString())
                 .backlogsAllowed(Boolean.TRUE.equals(req.getBacklogsAllowed()) ? true : false)
-                .allowedBranches(listToPipe(req.getAllowedBranches()))
+                .allowedBranches(listToPipe(req.getEligibleBranches()))
                 .allowedCourses(listToPipe(req.getAllowedCourses()))
                 .batch(req.getBatch())
                 .aboutCompany(req.getAboutCompany())
@@ -260,7 +323,8 @@ public class AdminDriveServiceImpl implements AdminDriveService {
     }
 
     private String listToPipe(List<String> list) {
-        if (list == null || list.isEmpty()) return null;
+        if (list == null || list.isEmpty())
+            return null;
         return list.stream()
                 .filter(s -> s != null && !s.isBlank())
                 .map(String::trim)
@@ -282,7 +346,14 @@ public class AdminDriveServiceImpl implements AdminDriveService {
     }
 
     private AdminDriveResponse toDTO(Drive drive, long totalApplicants,
-                                     long shortlistedCount, long selectedCount) {
+            long shortlistedCount, long selectedCount) {
+        // Derive branch list from DRIVE_ELIGIBILITY rows
+        List<String> branches = drive.getEligibilityRows() == null ? List.of()
+                : drive.getEligibilityRows().stream()
+                        .map(DriveEligibility::getBranchCode)
+                        .distinct()
+                        .collect(Collectors.toList());
+
         return AdminDriveResponse.builder()
                 .id(drive.getId())
                 .companyName(drive.getCompanyName())
@@ -298,19 +369,21 @@ public class AdminDriveServiceImpl implements AdminDriveService {
                 .selectedCount(selectedCount)
                 .createdAt(drive.getCreatedAt())
                 .updatedAt(drive.getUpdatedAt())
-                .branches(drive.getBranches())
+                .branches(branches)
+                .eligibleCourse(drive.getEligibleCourse())
+                .passoutYear(drive.getPassoutYear())
                 .build();
     }
 
     private long[] getCounts(Long driveId) {
         List<Object[]> results = adminDriveRepository.findApplicationCountsByDriveId(driveId);
         if (results == null || results.isEmpty() || results.get(0) == null) {
-            return new long[]{0L, 0L, 0L};
+            return new long[] { 0L, 0L, 0L };
         }
         Object[] raw = results.get(0);
-        long total       = raw[0] != null ? ((Number) raw[0]).longValue() : 0L;
+        long total = raw[0] != null ? ((Number) raw[0]).longValue() : 0L;
         long shortlisted = raw[1] != null ? ((Number) raw[1]).longValue() : 0L;
-        long approved    = raw[2] != null ? ((Number) raw[2]).longValue() : 0L;
-        return new long[]{total, shortlisted, approved};
+        long approved = raw[2] != null ? ((Number) raw[2]).longValue() : 0L;
+        return new long[] { total, shortlisted, approved };
     }
 }
