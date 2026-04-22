@@ -5,6 +5,8 @@ import lombok.*;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.List;
 
 import com.trident.placement.enums.DriveStatus;
 import com.trident.placement.enums.DriveType;
@@ -60,7 +62,7 @@ public class Drive {
      * Populated at drive creation; read by CgpaEligibilityService.
      */
     @OneToMany(mappedBy = "drive", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
-    private java.util.List<DriveEligibility> eligibilityRows = new java.util.ArrayList<>();
+    private List<DriveEligibility> eligibilityRows = new ArrayList<>();
 
     /** Drive-level default course (e.g. "B.TECH"). Each eligibility row may override. */
     @Column(name = "ELIGIBLE_COURSE", length = 50)

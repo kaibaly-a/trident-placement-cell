@@ -70,4 +70,13 @@ public interface AdminDriveRepository extends JpaRepository<Drive, Long> {
      */
     @Query("SELECT d.id FROM Drive d")
     List<Long> findAllIds();
-}
+
+    @Query("""
+    SELECT DISTINCT d FROM Drive d
+    JOIN d.eligibilityRows er
+    WHERE er.branchCode = :branchCode
+      AND d.status = com.trident.placement.enums.DriveStatus.OPEN
+    ORDER BY d.lastDate ASC
+    """)
+List<Drive> findOpenDrivesByBranch(@Param("branchCode") String branchCode);
+}
