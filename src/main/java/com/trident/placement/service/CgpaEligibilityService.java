@@ -4,10 +4,12 @@ import com.trident.placement.entity.Drive;
 import com.trident.placement.entity.DriveEligibility;
 import com.trident.placement.entity.EligibleDrive;
 import com.trident.placement.entity.Student;
+import com.trident.placement.entity.StudentCareer;
 import com.trident.placement.entity.StudentCgpa;
 import com.trident.placement.repository.EligibleDriveRepository;
 import com.trident.placement.repository.AdminDriveRepository;
 import com.trident.placement.repository.DriveEligibilityRepository;
+import com.trident.placement.repository.StudentCareerRepository;
 import com.trident.placement.repository.StudentCgpaRepository;
 import com.trident.placement.repository.StudentRepository;
 import com.trident.placement.util.BranchCodeUtils;
@@ -51,6 +53,7 @@ public class CgpaEligibilityService {
 
     private final StudentRepository studentRepository;
     private final StudentCgpaRepository studentCgpaRepository;
+    private final StudentCareerRepository studentCareerRepository;
     private final EligibleDriveRepository eligibleDriveRepository;
     private final DriveEligibilityRepository driveEligibilityRepository;
     private final AdminDriveRepository adminDriveRepository;
@@ -277,34 +280,20 @@ public class CgpaEligibilityService {
     // ── 3. STUDENT DASHBOARD — fetch eligible drives ──────────────────────────
 
     /**
-     * Returns eligible OPEN drives for a student — instant DB lookup.
+     * Returns all OPEN drives a student is eligible for.
      *
-     * Fetches the student's branchCode from DB, then queries ELIGIBLE_DRIVES
-     * filtered by that branchCode. A CSE student sees only CSE drives;
-     * an ETC student sees only ETC drives.
+     * Filters by:
+     *   1. Branch       — student's branchCode must match drive's DRIVE_ELIGIBILITY rows
+     *   2. Career marks — student's 10th / 12th / diploma / graduation % must meet
+     *                     the drive's minimum thresholds (null threshold = no requirement)
      *
-     * This works correctly only when ELIGIBLE_DRIVES.BRANCH_CODE is populated
-     * at insert time — which is now guaranteed by the fix in
-     * assignEligibleStudentsInternal().
+     * Career marks are read from STUDENT_CAREER table.
+     * If a student has no career record, marks are treated as null —
+     * they will only see drives that have no career marks requirements set.
+     *
+     * Zero values (0.0) in STUDENT_CAREER are treated as "not applicable"
+     * (e.g. diploma=0 means the student did not pursue a diploma — not filtered on).
      */
-    // @Transactional(readOnly = true)
-    // public List<Drive> getEligibleDrivesForStudent(String regdno) {
-    //     Student student = studentRepository.findById(regdno)
-    //             .orElseThrow(() -> new RuntimeException("Student not found: " + regdno));
-
-    //     String branchCode = student.getBranchCode() != null
-    //             ? student.getBranchCode().trim().toUpperCase()
-    //             : "";
-
-    //     log.debug("Fetching eligible drives for student {} (branch: {})", regdno, branchCode);
-
-    //     return eligibleDriveRepository
-    //             .findEligibleDrivesForStudent(regdno, branchCode)
-    //             .stream()
-    //             .map(EligibleDrive::getDrive)
-    //             .toList();
-    // }
-
     @Transactional(readOnly = true)
 public List<Drive> getEligibleDrivesForStudent(String regdno) {
     Student student = studentRepository.findById(regdno)
@@ -314,10 +303,24 @@ public List<Drive> getEligibleDrivesForStudent(String regdno) {
             ? student.getBranchCode().trim().toUpperCase()
             : "";
 
-    log.debug("Fetching drives for student {} (branch: {})", regdno, branchCode);
+    // Fetch career marks
+    StudentCareer career = studentCareerRepository.findByRegdno(regdno).orElse(null);
 
-    // Direct branch-based query — no eligible_drives table, no CGPA check
-    return adminDriveRepository.findOpenDrivesByBranch(branchCode);
+    BigDecimal tenth      = resolveCareerMark(career != null ? career.getTenthPercentage()      : null);
+    BigDecimal twelfth    = resolveCareerMark(career != null ? career.getTwelvthPercentage()     : null);
+    BigDecimal diploma    = resolveCareerMark(career != null ? career.getDiplomaPercentage()     : null);
+    BigDecimal graduation = resolveCareerMark(career != null ? career.getGraduationPercentage()  : null);
+
+    // ── CRITICAL DEBUG LOG — check what values are actually being passed ──
+    log.info("ELIGIBILITY CHECK | student={} | branch={} | 10th={} | 12th={} | diploma={} | graduation={}",
+            regdno, branchCode, tenth, twelfth, diploma, graduation);
+
+    return adminDriveRepository.findOpenDrivesByBranchAndCareerMarks(
+            branchCode, tenth, twelfth, diploma, graduation);
+}
+
+private BigDecimal resolveCareerMark(BigDecimal value) {
+    return (value == null || value.compareTo(BigDecimal.ZERO) <= 0) ? null : value;
 }
 
     // ── 4. ADMIN VIEW ─────────────────────────────────────────────────────────

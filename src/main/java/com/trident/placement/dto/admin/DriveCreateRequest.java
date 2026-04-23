@@ -82,6 +82,15 @@ public class DriveCreateRequest {
 
     private Long passoutYear; // 2026
 
+    // ── Career Marks Criteria ─────────────────────────────────────────────────
+    // All optional. Null = no minimum required for that field.
+    // Set e.g. minTenthPercent=60.0 to require >= 60% in 10th.
+
+    private BigDecimal minTenthPercent;
+    private BigDecimal minTwelfthPercent;
+    private BigDecimal minDiplomaPercent;
+    private BigDecimal minGraduationPercent;
+
     // ── Job Description fields ────────────────────────────────────────────────
     // All optional — a shell JD is created even if these are absent.
 

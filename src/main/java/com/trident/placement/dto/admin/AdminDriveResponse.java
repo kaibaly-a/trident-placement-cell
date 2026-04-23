@@ -36,4 +36,10 @@ public class AdminDriveResponse {
 
     private String eligibleCourse;
     private Long passoutYear;
+
+    // Career marks criteria shown in admin drive detail view
+private BigDecimal minTenthPercent;
+private BigDecimal minTwelfthPercent;
+private BigDecimal minDiplomaPercent;
+private BigDecimal minGraduationPercent;
 }

@@ -109,6 +109,11 @@ public class AdminDriveServiceImpl implements AdminDriveService {
                 .status(DriveStatus.OPEN)
                 .eligibleCourse(request.getEligibleCourse())
                 .passoutYear(request.getPassoutYear())
+                // Career marks criteria — null means no minimum required
+                .minTenthPercent(request.getMinTenthPercent())
+                .minTwelfthPercent(request.getMinTwelfthPercent())
+                .minDiplomaPercent(request.getMinDiplomaPercent())
+                .minGraduationPercent(request.getMinGraduationPercent())
                 .build();
 
         Drive saved = adminDriveRepository.save(drive);
@@ -166,6 +171,15 @@ public class AdminDriveServiceImpl implements AdminDriveService {
             drive.setEligibleCourse(request.getEligibleCourse());
         if (request.getPassoutYear() != null)
             drive.setPassoutYear(request.getPassoutYear());
+        // Career marks — only update if explicitly provided
+        if (request.getMinTenthPercent() != null)
+            drive.setMinTenthPercent(request.getMinTenthPercent());
+        if (request.getMinTwelfthPercent() != null)
+            drive.setMinTwelfthPercent(request.getMinTwelfthPercent());
+        if (request.getMinDiplomaPercent() != null)
+            drive.setMinDiplomaPercent(request.getMinDiplomaPercent());
+        if (request.getMinGraduationPercent() != null)
+            drive.setMinGraduationPercent(request.getMinGraduationPercent());
 
         // ── Then handle branches (which uses the updated course/passoutYear) ──
         boolean branchesChanged = false;
@@ -372,6 +386,10 @@ public class AdminDriveServiceImpl implements AdminDriveService {
                 .branches(branches)
                 .eligibleCourse(drive.getEligibleCourse())
                 .passoutYear(drive.getPassoutYear())
+                .minTenthPercent(drive.getMinTenthPercent())
+                .minTwelfthPercent(drive.getMinTwelfthPercent())
+                .minDiplomaPercent(drive.getMinDiplomaPercent())
+                .minGraduationPercent(drive.getMinGraduationPercent())
                 .build();
     }
 

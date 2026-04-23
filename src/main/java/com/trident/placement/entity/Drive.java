@@ -72,6 +72,22 @@ public class Drive {
     @Column(name = "PASSOUT_YEAR")
     private Long passoutYear;
 
+    // ── Career Marks Eligibility Criteria ────────────────────────────────────
+    // All nullable — null means "no minimum required" for that field.
+    // Example: minTenthPercent = 60.0 means student must have >= 60% in 10th.
+
+    @Column(name = "MIN_TENTH_PERCENT", precision = 5, scale = 2)
+private BigDecimal minTenthPercent;
+
+@Column(name = "MIN_TWELFTH_PERCENT", precision = 5, scale = 2)
+private BigDecimal minTwelfthPercent;
+
+@Column(name = "MIN_DIPLOMA_PERCENT", precision = 5, scale = 2)
+private BigDecimal minDiplomaPercent;
+
+@Column(name = "MIN_GRADUATION_PERCENT", precision = 5, scale = 2)
+private BigDecimal minGraduationPercent;
+
     @PrePersist
     protected void onCreate() {
         createdAt = LocalDateTime.now();

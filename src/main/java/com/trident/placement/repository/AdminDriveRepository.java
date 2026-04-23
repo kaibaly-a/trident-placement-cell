@@ -7,6 +7,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
+import java.math.BigDecimal;
 import java.util.List;
 
 /**
@@ -71,12 +72,29 @@ public interface AdminDriveRepository extends JpaRepository<Drive, Long> {
     @Query("SELECT d.id FROM Drive d")
     List<Long> findAllIds();
 
+    /**
+     * Returns all OPEN drives a student is eligible for by branch.
+     * Also filters by career marks criteria if set on the drive.
+     * Null criteria = no minimum required (student always passes that check).
+     *
+     * Called from CgpaEligibilityService.getEligibleDrivesForStudent().
+     */
     @Query("""
-    SELECT DISTINCT d FROM Drive d
-    JOIN d.eligibilityRows er
-    WHERE er.branchCode = :branchCode
-      AND d.status = com.trident.placement.enums.DriveStatus.OPEN
-    ORDER BY d.lastDate ASC
-    """)
-List<Drive> findOpenDrivesByBranch(@Param("branchCode") String branchCode);
+        SELECT DISTINCT d FROM Drive d
+        JOIN d.eligibilityRows er
+        WHERE er.branchCode = :branchCode
+          AND d.status = com.trident.placement.enums.DriveStatus.OPEN
+          AND (:tenthPct      IS NULL OR d.minTenthPercent      IS NULL OR :tenthPct      >= d.minTenthPercent)
+          AND (:twelfthPct    IS NULL OR d.minTwelfthPercent    IS NULL OR :twelfthPct    >= d.minTwelfthPercent)
+          AND (:diplomaPct    IS NULL OR d.minDiplomaPercent    IS NULL OR :diplomaPct    >= d.minDiplomaPercent)
+          AND (:graduationPct IS NULL OR d.minGraduationPercent IS NULL OR :graduationPct >= d.minGraduationPercent)
+        ORDER BY d.lastDate ASC
+        """)
+    List<Drive> findOpenDrivesByBranchAndCareerMarks(
+        @Param("branchCode")     String branchCode,
+        @Param("tenthPct")       BigDecimal tenthPct,
+        @Param("twelfthPct")     BigDecimal twelfthPct,
+        @Param("diplomaPct")     BigDecimal diplomaPct,
+        @Param("graduationPct")  BigDecimal graduationPct
+);
 }

@@ -48,4 +48,12 @@ public class DriveUpdateRequest {
     private Long passoutYear;
 
     private java.util.List<String> branches;
+
+    // ── Career Marks Criteria ─────────────────────────────────────────────────
+    // All optional. Null = no change to existing value.
+
+    private BigDecimal minTenthPercent;
+    private BigDecimal minTwelfthPercent;
+    private BigDecimal minDiplomaPercent;
+    private BigDecimal minGraduationPercent;
 }
