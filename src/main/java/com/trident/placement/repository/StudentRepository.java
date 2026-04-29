@@ -114,7 +114,7 @@ public interface StudentRepository extends JpaRepository<Student, String> {
          */
         @Query(value = "SELECT s.* FROM STUDENT s " +
                         "JOIN student_cgpa c ON s.REGDNO = c.regdno " +
-                        "WHERE LOWER(TRIM(s.COURSE)) = LOWER(TRIM(:course)) " +
+                        "WHERE LOWER(TRIM(RTRIM(s.COURSE, '.'))) = LOWER(TRIM(RTRIM(:course, '.'))) " +
                         "AND s.DEGREE_YOP = :degreeYop " +
                         "AND c.cgpa >= :minCgpa " +
                         "AND UPPER(TRIM(s.BRANCH_CODE)) IN (:branches) " +
@@ -123,5 +123,29 @@ public interface StudentRepository extends JpaRepository<Student, String> {
                         @Param("minCgpa") java.math.BigDecimal minCgpa,
                         @Param("course") String course,
                         @Param("degreeYop") Long degreeYop,
+                        @Param("branches") java.util.Set<String> branches);
+
+        /**
+         * For admin "Review & Publish" preview — finds students by branch/course/year
+         * WITHOUT requiring a CGPA record. Used when student_cgpa table may be empty.
+         * Career marks filtering is applied separately in Java after this query.
+         */
+        @Query(value = "SELECT s.* FROM STUDENT s " +
+                        "WHERE UPPER(TRIM(s.BRANCH_CODE)) IN (:branches) " +
+                        "AND LOWER(TRIM(RTRIM(s.COURSE, '.'))) = LOWER(TRIM(RTRIM(:course, '.'))) " +
+                        "AND s.DEGREE_YOP = :degreeYop " +
+                        "ORDER BY s.REGDNO ASC", nativeQuery = true)
+        List<Student> findStudentsForPreviewByCourseAndYop(
+                        @Param("course") String course,
+                        @Param("degreeYop") Long degreeYop,
+                        @Param("branches") java.util.Set<String> branches);
+
+        /**
+         * Fallback: find students by branch only (when course or year not set).
+         */
+        @Query(value = "SELECT s.* FROM STUDENT s " +
+                        "WHERE UPPER(TRIM(s.BRANCH_CODE)) IN (:branches) " +
+                        "ORDER BY s.REGDNO ASC", nativeQuery = true)
+        List<Student> findStudentsForPreviewByBranch(
                         @Param("branches") java.util.Set<String> branches);
 }

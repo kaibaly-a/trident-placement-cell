@@ -3,6 +3,8 @@ package com.trident.placement.service;
 import com.trident.placement.dto.admin.AdminDriveResponse;
 import com.trident.placement.dto.admin.DriveCreateRequest;
 import com.trident.placement.dto.admin.DriveUpdateRequest;
+import com.trident.placement.dto.admin.EligibleStudentPreviewDTO;
+import com.trident.placement.dto.admin.PublishDriveRequest;
 
 import java.util.List;
 
@@ -13,4 +15,8 @@ public interface AdminDriveService {
     AdminDriveResponse updateDrive(Long id, DriveUpdateRequest request);
     void deleteDrive(Long id);
     AdminDriveResponse toggleDriveStatus(Long id);
+    
+    List<EligibleStudentPreviewDTO> getEligibleStudentPreviews(Long driveId);
+    
+    AdminDriveResponse publishDrive(Long driveId, PublishDriveRequest request);
 }

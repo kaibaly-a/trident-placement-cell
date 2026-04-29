@@ -104,6 +104,32 @@ public class AdminDriveController {
                 ApiResponse.ok("Drive status changed to " + updated.getStatus(), updated));
     }
 
+    @GetMapping("/{id}/eligible-students")
+    public ResponseEntity<ApiResponse<List<com.trident.placement.dto.admin.EligibleStudentPreviewDTO>>> getEligibleStudents(
+            @PathVariable Long id) {
+        List<com.trident.placement.dto.admin.EligibleStudentPreviewDTO> students =
+                adminDriveService.getEligibleStudentPreviews(id);
+        return ResponseEntity.ok(ApiResponse.ok(students));
+    }
+
+    /**
+     * PATCH /api/admin/drives/{id}/publish
+     *
+     * Publishes a DRAFT drive to OPEN.
+     * Body: { "selectedRegdnos": ["2201289102", "2201289080", ...] }
+     * Only the selected students will see this drive in their dashboard.
+     */
+    @PatchMapping("/{id}/publish")
+    public ResponseEntity<ApiResponse<AdminDriveResponse>> publishDrive(
+            @PathVariable Long id,
+            @RequestBody com.trident.placement.dto.admin.PublishDriveRequest request) {
+        AdminDriveResponse published = adminDriveService.publishDrive(id, request);
+        return ResponseEntity.ok(ApiResponse.ok(
+                "Drive published successfully to " +
+                (request.getSelectedRegdnos() != null ? request.getSelectedRegdnos().size() : 0) +
+                " student(s)", published));
+    }
+
     /**
      * POST /api/admin/drives/{id}/recompute-eligibility
      *
@@ -144,4 +170,4 @@ public class AdminDriveController {
                                " drive(s). Students will be updated shortly.", null));
     }
 }
-
+

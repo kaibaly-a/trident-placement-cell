@@ -4,10 +4,14 @@ import com.trident.placement.dto.DriveJDResponse;
 import com.trident.placement.dto.admin.AdminDriveResponse;
 import com.trident.placement.dto.admin.DriveCreateRequest;
 import com.trident.placement.dto.admin.DriveUpdateRequest;
+import com.trident.placement.dto.admin.EligibleStudentPreviewDTO;
+import com.trident.placement.dto.admin.PublishDriveRequest;
 import com.trident.placement.entity.Drive;
 import com.trident.placement.entity.DriveEligibility;
 import com.trident.placement.entity.DriveJD;
 import com.trident.placement.entity.DriveJDSelectionStep;
+import com.trident.placement.entity.Student;
+import com.trident.placement.entity.StudentCareer;
 import com.trident.placement.enums.DriveStatus;
 import com.trident.placement.enums.DriveType;
 import com.trident.placement.repository.AdminApplicationRepository;
@@ -40,6 +44,8 @@ public class AdminDriveServiceImpl implements AdminDriveService {
     private final EligibleDriveRepository eligibleDriveRepository;
     private final DriveJDRepository driveJDRepository;
     private final DriveEligibilityRepository driveEligibilityRepository;
+    private final com.trident.placement.repository.StudentRepository studentRepository;
+    private final com.trident.placement.repository.StudentCareerRepository studentCareerRepository;
 
     // Injected to trigger eligibility AFTER drive creation
     private final CgpaEligibilityService cgpaEligibilityService;
@@ -106,7 +112,7 @@ public class AdminDriveServiceImpl implements AdminDriveService {
                 .description(request.getDescription() != null
                         ? request.getDescription().trim()
                         : null)
-                .status(DriveStatus.OPEN)
+                .status(DriveStatus.DRAFT)          // ← DRAFT: not visible to students yet
                 .eligibleCourse(request.getEligibleCourse())
                 .passoutYear(request.getPassoutYear())
                 // Career marks criteria — null means no minimum required
@@ -272,6 +278,170 @@ public class AdminDriveServiceImpl implements AdminDriveService {
 
         long[] counts = getCounts(id);
         return toDTO(updated, counts[0], counts[1], counts[2]);
+    }
+
+    // ── Review & Publish flow ─────────────────────────────────────────────────
+
+    /**
+     * GET /api/admin/drives/{id}/eligible-students
+     *
+     * Returns all students who are eligible for this drive based on:
+     *   1. Branch match (DRIVE_ELIGIBILITY rows)
+     *   2. Career marks criteria (min 10th / 12th / diploma / graduation %)
+     *
+     * Called after admin hits "Next" on the create form.
+     * Admin reviews the list, selects/deselects students, then hits "Publish".
+     */
+    @Override
+    @Transactional(readOnly = true)
+    public List<EligibleStudentPreviewDTO> getEligibleStudentPreviews(Long driveId) {
+        Drive drive = findDriveOrThrow(driveId);
+
+        // Get all branches for this drive
+        List<DriveEligibility> eligibilityRows = driveEligibilityRepository.findByDriveId(driveId);
+        if (eligibilityRows.isEmpty()) {
+            log.warn("Drive id={} has no eligibility rows — returning empty student list", driveId);
+            return List.of();
+        }
+
+        // Collect all students matching branch criteria
+        java.util.Set<String> processedRegdnos = new java.util.HashSet<>();
+        List<EligibleStudentPreviewDTO> result = new ArrayList<>();
+
+        for (DriveEligibility row : eligibilityRows) {
+            String branchCode  = row.getBranchCode().trim().toUpperCase();
+            String course      = row.getCourse()      != null ? row.getCourse()      : drive.getEligibleCourse();
+            Long   passoutYear = row.getPassoutYear() != null ? row.getPassoutYear() : drive.getPassoutYear();
+
+            java.util.Set<String> branchSet = java.util.Collections.singleton(branchCode);
+
+            List<Student> students;
+            if (course == null || passoutYear == null) {
+                // Fallback: branch only, no CGPA required
+                students = studentRepository.findStudentsForPreviewByBranch(branchSet);
+            } else {
+                // Branch + course + year, no CGPA required
+                students = studentRepository.findStudentsForPreviewByCourseAndYop(
+                        course, passoutYear, branchSet);
+            }
+
+            for (Student student : students) {
+                if (student.getRegdno() == null || processedRegdnos.contains(student.getRegdno())) {
+                    continue;
+                }
+
+                // Apply career marks filter
+                StudentCareer career = studentCareerRepository
+                        .findByRegdno(student.getRegdno()).orElse(null);
+
+                if (!passesCareerFilter(career, drive)) {
+                    continue;
+                }
+
+                processedRegdnos.add(student.getRegdno());
+
+                result.add(EligibleStudentPreviewDTO.builder()
+                        .regdno(student.getRegdno())
+                        .name(student.getName())
+                        .branchCode(student.getBranchCode())
+                        .course(student.getCourse())
+                        .degreeYop(student.getDegreeYop())
+                        .tenthPercentage(career != null && career.getTenthPercentage()     != null
+                                ? career.getTenthPercentage().doubleValue()     : null)
+                        .twelfthPercentage(career != null && career.getTwelvthPercentage()  != null
+                                ? career.getTwelvthPercentage().doubleValue()   : null)
+                        .diplomaPercentage(career != null && career.getDiplomaPercentage()  != null
+                                ? career.getDiplomaPercentage().doubleValue()   : null)
+                        .graduationPercentage(career != null && career.getGraduationPercentage() != null
+                                ? career.getGraduationPercentage().doubleValue() : null)
+                        .build());
+            }
+        }
+
+        log.info("Drive {} eligible student preview: {} students", driveId, result.size());
+        return result;
+    }
+
+    /**
+     * PATCH /api/admin/drives/{id}/publish
+     *
+     * Transitions a DRAFT drive to OPEN status.
+     * Only the regdnos in request.selectedRegdnos will see this drive
+     * (stored in ELIGIBLE_DRIVES with their branchCode).
+     *
+     * If selectedRegdnos is null/empty, falls back to ALL eligible students.
+     */
+    @Override
+    @Transactional
+    public AdminDriveResponse publishDrive(Long driveId, PublishDriveRequest request) {
+        Drive drive = findDriveOrThrow(driveId);
+
+        if (drive.getStatus() != com.trident.placement.enums.DriveStatus.DRAFT) {
+            throw new IllegalStateException(
+                    "Drive '" + drive.getCompanyName() + "' is not in DRAFT status. " +
+                    "Only DRAFT drives can be published.");
+        }
+
+        List<String> selectedRegdnos = request.getSelectedRegdnos();
+
+        // If admin didn't explicitly select anyone, include ALL eligible students
+        if (selectedRegdnos == null || selectedRegdnos.isEmpty()) {
+            log.info("No students explicitly selected for drive {} — including all eligible students", driveId);
+            selectedRegdnos = getEligibleStudentPreviews(driveId)
+                    .stream()
+                    .map(EligibleStudentPreviewDTO::getRegdno)
+                    .collect(Collectors.toList());
+        }
+
+        // Clear any existing eligible_drives rows (safety — shouldn't exist for DRAFT)
+        eligibleDriveRepository.deleteByDriveId(driveId);
+
+        // Insert ELIGIBLE_DRIVES rows only for selected students
+        // Branch code is resolved by looking up each student
+        List<com.trident.placement.entity.EligibleDrive> toInsert = new ArrayList<>();
+        for (String regdno : selectedRegdnos) {
+            studentRepository.findById(regdno).ifPresent(student -> {
+                String branchCode = student.getBranchCode() != null
+                        ? student.getBranchCode().trim().toUpperCase() : "";
+                toInsert.add(com.trident.placement.entity.EligibleDrive.builder()
+                        .regdno(regdno)
+                        .drive(drive)
+                        .branchCode(branchCode)
+                        .build());
+            });
+        }
+
+        if (!toInsert.isEmpty()) {
+            eligibleDriveRepository.saveAll(toInsert);
+        }
+
+        // Flip status to OPEN — now visible to selected students
+        drive.setStatus(com.trident.placement.enums.DriveStatus.OPEN);
+        Drive published = adminDriveRepository.save(drive);
+
+        log.info("Drive {} '{}' published — {} students notified",
+                driveId, published.getCompanyName(), toInsert.size());
+
+        long[] counts = getCounts(driveId);
+        return toDTO(published, counts[0], counts[1], counts[2]);
+    }
+
+    /**
+     * Returns true if the student's career marks meet the drive's minimum criteria.
+     * A null drive criterion means no requirement for that field.
+     * A null or zero student mark means the field is not applicable for them.
+     */
+    private boolean passesCareerFilter(StudentCareer career, Drive drive) {
+        return passesOneMark(career != null ? career.getTenthPercentage()      : null, drive.getMinTenthPercent()) &&
+               passesOneMark(career != null ? career.getTwelvthPercentage()    : null, drive.getMinTwelfthPercent()) &&
+               passesOneMark(career != null ? career.getDiplomaPercentage()    : null, drive.getMinDiplomaPercent()) &&
+               passesOneMark(career != null ? career.getGraduationPercentage() : null, drive.getMinGraduationPercent());
+    }
+
+    private boolean passesOneMark(java.math.BigDecimal studentMark, java.math.BigDecimal driveMin) {
+        if (driveMin == null) return true;                          // No requirement set
+        if (studentMark == null || studentMark.compareTo(java.math.BigDecimal.ZERO) <= 0) return false; // No mark = fails
+        return studentMark.compareTo(driveMin) >= 0;               // Must meet or exceed minimum
     }
 
     // ── Private Helpers ───────────────────────────────────────────────────────

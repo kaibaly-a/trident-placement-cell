@@ -5,8 +5,10 @@ import org.springframework.stereotype.Service;
 import com.trident.placement.dto.DashboardStatsDTO;
 import com.trident.placement.dto.StudentDTO;
 import com.trident.placement.entity.Student;
+import com.trident.placement.entity.StudentCareer;
 import com.trident.placement.repository.DriveRepository;
 import com.trident.placement.repository.StudentRepository;
+import com.trident.placement.repository.StudentCareerRepository;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -17,7 +19,7 @@ import lombok.extern.slf4j.Slf4j;
 public class StudentServiceImpl implements StudentService {
 	
 	private final StudentRepository studentRepository;
-	private final DriveRepository driveRepository;
+	private final StudentCareerRepository studentCareerRepository;
 	
 	@Override
 	public StudentDTO getStudentById(String regdno) {
@@ -112,7 +114,7 @@ public class StudentServiceImpl implements StudentService {
 
 		log.debug("Mapping Student entity to DTO for regdno: {}", student.getRegdno());
 
-        return StudentDTO.builder()
+        StudentDTO.StudentDTOBuilder dtoBuilder = StudentDTO.builder()
                 .regdno(student.getRegdno())
                 .name(student.getName())
                 .gender(student.getGender())
@@ -135,7 +137,16 @@ public class StudentServiceImpl implements StudentService {
                 .cfpaymode(student.getCfpaymode())
                 .religion(student.getReligion())
                 .msUserPrincipalName(student.getMsUserPrincipalName())
-                .collegeName(student.getCollegeName())
-                .build();
+                .collegeName(student.getCollegeName());
+        
+        // Fetch and add student career marks (10th and 12th scores)
+        studentCareerRepository.findByRegdno(student.getRegdno())
+                .ifPresent(career -> {
+                    log.debug("Found StudentCareer for regdno: {}", student.getRegdno());
+                    dtoBuilder.tenthPercentage(career.getTenthPercentage())
+                            .twelvthPercentage(career.getTwelvthPercentage());
+                });
+        
+        return dtoBuilder.build();
     }
 }
